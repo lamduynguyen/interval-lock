@@ -1,0 +1,244 @@
+#pragma once
+
+#include "common/constants.h"
+#include "common/typedefs.h"
+#include "leanstore/config.h"
+#include "leanstore/kv_interface.h"
+#include "storage/blob/blob_state.h"
+#include "storage/page.h"
+#include "sync/hybrid_latch.h"
+#include "transaction/lock_manager_interface.h"
+
+#include <span>
+#include <string>
+
+namespace leanstore::storage {
+
+/*
+**    BTreeNode format
+**
+**      |---------------------|
+**      | BTreeNodeHeader     |
+**      |---------------------|
+**      | PageSlot slots[]    |   |  10 bytes per slot.  Sorted order.
+**      |                     |   |  Grows downward
+**      |---------------------|   v
+**      | unallocated space   |
+**      |                     |
+**      |---------------------|   ^
+**      | Payload area        |   |  Grows upwards
+**      | Ptr() + data_offset |   |  Size: space_used
+**      |---------------------|
+**
+**  The payload area of each record contains both key + value (i.e. payload) of the record
+**  While the PageSlot only maintain the sorted order & the offset to the record
+**
+**  The relationship between parent's separators and children are depicted as below
+**  Note that both children are leaf nodes.
+**  For inner nodes, both left's keys vs X vs right's keys are exclusive, i.e. left's keys < X < right's keys
+**  Inside a node, LowerFences <= all keys < UpperFence
+**
+**                    |------------------|
+**                    |      parent      |
+**                    | ptr |  X   | ptr |
+**                    |------------------|
+**                   /                    \
+**                  /                      \
+**         |-------------|          |--------------|
+**         | left child  |          | right child  |
+**         |   keys < X  |          |  keys >= X   |
+**         |-------------|          |--------------|
+**
+**
+**  Prefix compression:
+**  The node stores a common key prefix in its metadata (BTreeNodeHeader::prefix).
+**  Keys inside the payload area only store the remaining suffix:
+**
+**      full_key = node.prefix || key_suffix
+**
+**  Timestamp (optional):
+**  If KV_HAS_TIMESTAMP(node) (defined in node.cc) evaluates to true, a 64-bit timestamp
+**  is stored between the key suffix and the payload.
+**  Otherwise, the timestamp field is omitted and the payload follows the key suffix directly.
+**
+**  Visualization of record layouts
+**  Without timestamp:
+**
+**      |<--- key_len - prefix_len --->|<--- payload_len -->|
+**      |------------------------------|--------------------|
+**      |          key_suffix          |      payload       |
+**      |------------------------------|--------------------|
+**
+**  With timestamp:
+**
+**      |<--- key_len - prefix_len --->|<---8 bytes--->|<--- payload_len -->|
+**      |------------------------------|---------------|--------------------|
+**      |          key_suffix          |    ts (u64)   |      payload       |
+**      |------------------------------|---------------|--------------------|
+*/
+
+// -------------------------------------------------------------------------------------
+struct FenceKeySlot {
+  leng_t offset;
+  leng_t len;
+};
+
+struct SeparatorInfo {
+  u32 len;            // len of new separator
+  u32 slot;           // slot at which we split
+  bool is_truncated;  // if true, we truncate the separator taking len bytes from slot+1
+};
+
+struct PageSlot {
+  leng_t offset;
+  leng_t key_length;
+  leng_t payload_length;
+
+  // HEAD stores the first 4 bytes of the key
+  std::array<u8, 4> head;
+} __attribute__((packed));
+
+// -------------------------------------------------------------------------------------
+struct BTreeNodeHeader {
+  static constexpr u64 SIZE_UNDER_FULL = 3 * PAGE_SIZE / 4;  // merge nodes below this size
+  static constexpr u64 EMPTY_NEIGHBOR  = ~0ULL;
+  static constexpr u32 HINT_COUNT      = 16;
+
+  union {
+    pageid_t right_most_child;                 // for inner nodes: pageid_t of right-most child
+    pageid_t next_leaf_node = EMPTY_NEIGHBOR;  // for leaf nodes: pageid_t of the right sibling
+  };
+
+  // Fences are only used to determine key ranges of a specific B+tree node
+  FenceKeySlot lower_fence = {0, 0};  // exclusive
+  FenceKeySlot upper_fence = {0, 0};  // inclusive
+
+  bool is_leaf;
+  leng_t count       = 0;
+  leng_t space_used  = 0;                               // space used to store all key + payload
+  leng_t data_offset = static_cast<leng_t>(PAGE_SIZE);  // where we start moving payload to
+  leng_t prefix_len  = 0;
+  std::array<u8, 4> hints[HINT_COUNT];
+
+  explicit BTreeNodeHeader(bool is_leaf);
+  ~BTreeNodeHeader() = default;
+
+  auto HasRightNeighbor() -> bool;
+  auto IsLowerFenceInfinity() -> bool;
+  auto operator==(const BTreeNodeHeader &rhs) const -> bool;
+};
+
+/**
+ * @brief Similar to BTreeNodeHeader, but have an embedded HybridLatch for synchronization
+ *
+ * Main purpose is to implement an in-memory B-tree
+ */
+struct BTreeNodeHeaderWithLatch : BTreeNodeHeader {
+  sync::HybridLatch latch;
+
+  explicit BTreeNodeHeaderWithLatch(bool is_leaf) : BTreeNodeHeader(is_leaf) {}
+};
+
+// -------------------------------------------------------------------------------------
+template <class NodeHeader>
+class alignas(PAGE_SIZE) BTreeNodeImpl : public PageHeader {
+ public:
+  static constexpr u32 MAX_RECORD_SIZE =
+    ((PAGE_SIZE - sizeof(NodeHeader) - sizeof(PageHeader) - (3 * sizeof(PageSlot)))) / 3;
+
+  NodeHeader header;
+  PageSlot slots[(PAGE_SIZE - sizeof(NodeHeader) - sizeof(PageHeader)) / sizeof(PageSlot)];
+
+  explicit BTreeNodeImpl(bool is_leaf);
+  BTreeNodeImpl(BTreeNodeImpl<NodeHeader> &other);
+  ~BTreeNodeImpl() = default;
+
+  // Misc
+  auto Ptr() -> u8 *;
+  auto IsInner() -> bool;
+  auto GetPrefix() -> u8 *;
+  static auto GetHead(u8 *key, leng_t key_len) -> std::array<u8, 4>;
+  auto FindChild(std::span<u8> search_key, const ComparisonLambda &cmp) -> pageid_t;
+  auto FindChild(std::span<u8> search_key, leng_t &pos, const ComparisonLambda &cmp) -> pageid_t;
+
+  // Debugging purposes
+  auto ToString() -> std::string;
+  auto KeyToString(leng_t slot_id) -> std::string;
+
+  // Fence utilities
+  auto GetLowerFence() -> std::span<u8>;
+  auto GetUpperFence() -> std::span<u8>;
+  void InsertFence(FenceKeySlot &fk, std::span<u8> key);
+  void SetFences(std::span<u8> lower, std::span<u8> upper, const ComparisonLambda &cmp);
+
+  // Space utilities
+  void Compactify(const ComparisonLambda &cmp);
+  auto FreeSpace() -> leng_t;
+  auto FreeSpaceAfterCompaction() -> leng_t;
+  auto SpaceRequiredForKV(leng_t key_len, leng_t payload_len) -> leng_t;
+  auto HasSpaceForKV(leng_t key_len, leng_t payload_len) -> bool;
+
+  // Get data utilities
+  auto GetKey(leng_t slot_id) -> u8 *;  // NOTE: this won't return the prefix
+  auto GetPayload(leng_t slot_id) -> std::span<u8>;
+  auto GetChild(leng_t slot_id) -> pageid_t;
+  void GetSeparatorKey(u8 *out_separator_key, const SeparatorInfo &info);
+
+  // Inline lock utilities, only used for BASELINE_INLINE:
+  // records of a leaf carry a lock word between their key suffix and their payload;
+  // i.e., GetPayload() - InlineLockByte()).
+  inline auto InlineLockByte() -> leng_t {
+    return (FLAGS_txn_locking_variant == static_cast<u32>(transaction::LockManagerVariant::BASELINE_INLINE) &&
+            header.is_leaf)
+             ? 1
+             : 0;
+  }
+
+  auto GetLockByte(leng_t slot_id) -> u8 *;
+  auto SlotMatchesKey(leng_t slot_id, std::span<const u8> full_key) -> bool;
+  void ClearAllLockBytes();
+
+  // Hint utilities
+  void MakeHint();
+  void UpdateHint(leng_t slot_id);
+  void SearchHint(const std::array<u8, 4> &key_head, leng_t &out_lower_bound, leng_t &out_upper_bound);
+
+  // Search utilities
+  auto LowerBound(std::span<u8> search_key, bool &exact_found, const ComparisonLambda &cmp) -> leng_t;
+  auto LowerBound(std::span<u8> search_key, const ComparisonLambda &cmp) -> leng_t;
+
+  // Store/Insert/Remove utilities
+  void StoreRecordData(leng_t slot_id, std::span<u8> key, std::span<const u8> payload, u8 lock);
+  void StoreRecordDataWithoutPrefix(leng_t slot_id, std::span<u8> key, std::span<const u8> payload, u8 lock);
+  auto InsertKeyValue(std::span<u8> key, std::span<const u8> payload, const ComparisonLambda &cmp) -> leng_t;
+  auto RemoveSlot(leng_t slot_id) -> bool;
+  auto RemoveKey(std::span<u8> key, const ComparisonLambda &cmp) -> bool;
+
+  // Clone utilities
+  static void CopyNodeContent(BTreeNodeImpl *dst, BTreeNodeImpl *src);
+  void CopyKeyValue(BTreeNodeImpl *dst, leng_t src_slot, leng_t dst_slot);
+  void CopyKeyValueRange(BTreeNodeImpl *dst, leng_t dst_slot_start, leng_t src_slot_start, leng_t src_count);
+
+  // Split/Merge utilities
+  auto FindSeparator(const ComparisonLambda &cmp) -> SeparatorInfo;
+  void InsertSeparator(std::span<u8> separator, pageid_t left_pid, pageid_t right_pid, const ComparisonLambda &cmp);
+  void SplitNode(BTreeNodeImpl *parent, BTreeNodeImpl *node_right, pageid_t left_pid, pageid_t right_pid,
+                 leng_t separator_slot, std::span<u8> sep_key, const ComparisonLambda &cmp);
+  auto MergeNodes(leng_t left_slot_id, BTreeNodeImpl *parent, BTreeNodeImpl *right, const ComparisonLambda &cmp)
+    -> bool;
+
+  // BLOB custom LookUp operators
+  auto FindChildWithBlobKey(const blob::BlobLookupKey &key, leng_t &pos, const ComparisonLambda &cmp) -> pageid_t;
+  auto LowerBoundWithBlobKey(const blob::BlobLookupKey &key, bool &exact_found, const ComparisonLambda &cmp) -> leng_t;
+
+ private:
+  auto CommonPrefix(leng_t lhs_slot, leng_t rhs_slot) -> leng_t;
+};
+
+using BTreeNode = BTreeNodeImpl<BTreeNodeHeader>;
+
+static_assert(sizeof(BTreeNode) == PAGE_SIZE);
+static_assert(BTreeNode::MAX_RECORD_SIZE > 1.2 * KB);
+static_assert(blob::BlobState::MAX_MALLOC_SIZE <= BTreeNode::MAX_RECORD_SIZE);
+
+}  // namespace leanstore::storage
