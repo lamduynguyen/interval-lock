@@ -1,6 +1,6 @@
-# IntervalLock — High-Performance Serializability with Interval Locking
+# Interval Locking
 
-This is the reproducibility package for the paper **"High-Performance Serializability with Interval Locking"**, under submission to VLDB'27.
+This is the reproducibility package for the paper **"Serializability (Almost) for Free with Interval Locking"**, under submission to VLDB'27.
 
 ## Compiling
 
@@ -40,7 +40,7 @@ At runtime, use `--txn_locking_variant=<0..3>`:
 | 0 | FASTER-style hash buckets + circular buffer of lock entries |
 | 1 | Staged lock manager (Jung et al., TODS 2014), deadlock detection only |
 | 2 | Inline tuple lock, one byte stored in the tuple itself |
-| 3 | IntervalLock (range-granularity precision locking) |
+| 3 | IntervalLock |
 
 and `--txn_locking_policy=<0..1>` for the conflict policy (`0` = no-wait, `1` = wait-die). The baseline inline lock manager (variant 2) only supports no-wait.
 
@@ -52,4 +52,4 @@ Run the full gtest suite sequentially:
 
 ## Acknowledgements
 
-IntervalLock is implemented on top of [LeanStore](https://db.in.tum.de/~leis/papers/leanstore.pdf), a high-performance OLTP storage engine optimized for many-core CPUs and NVMe SSDs.
+Interval locking is implemented on top of [LeanStore](https://db.in.tum.de/~leis/papers/leanstore.pdf), specifically [Autonomous commit](https://dl.acm.org/doi/pdf/10.1145/3725328) and [Commit causality clocks](https://dl.acm.org/doi/pdf/10.1145/3859374).
