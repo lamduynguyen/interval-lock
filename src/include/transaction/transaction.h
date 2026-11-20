@@ -31,10 +31,10 @@ namespace leanstore::transaction {
 
 class TransactionManager;
 
-// We do not support anything other than RU and SER
+// We do not support anything other than NO_LOCK and SER
 enum class IsolationLevel : u8 {
-  READ_UNCOMMITTED = 0,
-  SERIALIZABLE     = 1,
+  NO_LOCK      = 0,
+  SERIALIZABLE = 1,
 };
 
 struct SerializableTransaction;

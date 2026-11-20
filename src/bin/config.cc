@@ -45,9 +45,9 @@ DEFINE_uint64(wal_checkpoint_shards, 128,
 // -----------------------------------------------------------------------------------
 /* Transaction */
 DEFINE_bool(txn_debug, false, "Enable debugging for transaction ops, including commit latency info");
-DEFINE_string(txn_default_isolation_level, "ru",
+DEFINE_string(txn_default_isolation_level, "nl",
               "The serializable mode used in LeanStore, only support two following modes"
-              "(ru: READ_UNCOMMITTED, ser: SERIALIZABLE)");
+              "(nl: NO_LOCK, ser: SERIALIZABLE)");
 
 /* Configuration for the lock manager */
 DEFINE_uint32(txn_locking_variant, 0,

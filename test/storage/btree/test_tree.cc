@@ -230,7 +230,7 @@ class TestBTreePrecisionScan : public BaseTest {
     saved_variant_                    = FLAGS_txn_locking_variant;
     saved_iso_                        = FLAGS_txn_default_isolation_level;
     FLAGS_txn_locking_variant         = 3;
-    FLAGS_txn_default_isolation_level = "ru";
+    FLAGS_txn_default_isolation_level = "nl";
     BaseTest::SetupTestFile();
     InitRandTransaction();
     tree_ = std::make_unique<BTree>(buffer_.get(), 0);
@@ -476,7 +476,7 @@ class TestBTreeInline : public BaseTest {
     saved_iso_                        = FLAGS_txn_default_isolation_level;
     FLAGS_txn_locking_variant         = 2;
     FLAGS_txn_locking_policy          = 0;
-    FLAGS_txn_default_isolation_level = "ru";
+    FLAGS_txn_default_isolation_level = "nl";
     BaseTest::SetupTestFile();
     InitRandTransaction();
     tree_ = std::make_unique<BTree>(buffer_.get(), 0);

@@ -60,7 +60,7 @@ class TestLostUpdate : public BaseTest {
   /// Reads `k` in its own committed transaction (RU: whatever is committed is what we check).
   auto FinalValue() -> u64 {
     u64 v = 0;
-    txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, IsolationLevel::READ_UNCOMMITTED,
+    txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, IsolationLevel::NO_LOCK,
                                transaction::Transaction::Mode::OLTP);
     auto key = AsKey(KEY_ID);
     auto ret = tree_->LookUp(key, [&](std::span<const u8> payload) {
@@ -113,7 +113,7 @@ class TestLostUpdate : public BaseTest {
 
 TEST_F(TestLostUpdate, ReadComputeWriteIncrementsMustNotBeLost) {
   {
-    txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, IsolationLevel::READ_UNCOMMITTED,
+    txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, IsolationLevel::NO_LOCK,
                                transaction::Transaction::Mode::OLTP);
     auto key     = AsKey(KEY_ID);
     auto payload = Encode(0);

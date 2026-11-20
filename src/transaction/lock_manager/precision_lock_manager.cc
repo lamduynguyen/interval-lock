@@ -363,8 +363,8 @@ void PrecisionLockManager::OnPageSplit(sync::ExclusiveGuard<storage::BTreeNode> 
     if (RangeEntry::CmpBound(e->Lo(), e->LoAfter(), split_key, false) <= 0) { left_frame.range_refs[kept++] = e; }
   }
   left_frame.range_refs.resize(kept);
-  std::erase_if(left_frame.range_refs, [](RangeEntry *e) { return e->state.Tombstone(); });
-  std::erase_if(right_frame.range_refs, [](RangeEntry *e) { return e->state.Tombstone(); });
+  left_frame.range_refs.erase_if([](RangeEntry *e) { return e->state.Tombstone(); });
+  right_frame.range_refs.erase_if([](RangeEntry *e) { return e->state.Tombstone(); });
   PromoteWaiters(left_frame);
   PromoteWaiters(right_frame);
 }
@@ -384,7 +384,7 @@ void PrecisionLockManager::OnPageMerge(sync::ExclusiveGuard<storage::BTreeNode> 
     if (std::find(refs.begin(), refs.end(), e) == refs.end()) { refs.push_back(e); }
   }
   left_frame.range_refs.clear();
-  std::erase_if(right_frame.range_refs, [](RangeEntry *e) { return e->state.Tombstone(); });
+  right_frame.range_refs.erase_if([](RangeEntry *e) { return e->state.Tombstone(); });
   PromoteWaiters(right_frame);
   // All refs now live on the merged page.
   // Range entries whose range fits its fences can use the page-id

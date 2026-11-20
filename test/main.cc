@@ -7,7 +7,7 @@
 auto main(int argc, char **argv) -> int {
   ::testing::InitGoogleTest(&argc, argv);
   FLAGS_worker_count                = 1;
-  FLAGS_txn_default_isolation_level = "ru";
+  FLAGS_txn_default_isolation_level = "nl";
 
   google::ParseCommandLineFlags(&argc, &argv, true);
   (void)LOG_LEVEL_DEBUG;

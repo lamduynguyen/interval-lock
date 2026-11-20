@@ -101,8 +101,8 @@ LeanStore::LeanStore()
     for (auto idx = 0U; idx < FLAGS_wal_recovery_threads; idx++) {
       worker_pool.ScheduleAsyncJob(idx, [&]() {
         // Trick: Run in RU to prevent holding new locks
-        transaction_manager->StartTransaction(Transaction::Type::SYSTEM, 0,
-                                              transaction::IsolationLevel::READ_UNCOMMITTED);
+        transaction_manager->StartTransaction(Transaction::Type::SYSTEM, 0, transaction::IsolationLevel::NO_LOCK);
+
         recovery->Redo();
         CommitTransaction();
       });

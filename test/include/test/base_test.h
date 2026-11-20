@@ -138,13 +138,13 @@ class BaseTest : public ::testing::Test {
   void InitRandTransaction(wid_t w_id = 0) {
     LeanStore::worker_thread_id = w_id;
     log_->LocalLogWorker().backend.Connect();
-    txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, transaction::IsolationLevel::READ_UNCOMMITTED,
+    txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, transaction::IsolationLevel::NO_LOCK,
                                transaction::Transaction::Mode::OLTP);
     transaction::Transaction::active_txn.MarkAsWrite();
   }
 
   void ConvenientTxnWrapper(const std::function<void()> &fn) {
-    txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, transaction::IsolationLevel::READ_UNCOMMITTED,
+    txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, transaction::IsolationLevel::NO_LOCK,
                                transaction::Transaction::Mode::OLTP);
     fn();
     txn_man_->CommitTransaction();

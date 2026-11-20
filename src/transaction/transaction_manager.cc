@@ -48,8 +48,8 @@ TransactionManager::~TransactionManager() {}
 
 auto TransactionManager::ParseIsolationLevel(const std::string &str) -> IsolationLevel {
   if (str == "ser") { return IsolationLevel::SERIALIZABLE; }
-  Ensure(str == "ru");
-  return IsolationLevel::READ_UNCOMMITTED;
+  Ensure(str == "nl");
+  return IsolationLevel::NO_LOCK;
 }
 
 void TransactionManager::StartTransaction(Transaction::Type next_tx_type, timestamp_t next_tx_arrival_time,
@@ -80,7 +80,7 @@ void TransactionManager::CommitTransaction() {
 
   // Assign timestamp and Release locks according to Concurrency Control
   txn.commit_ts = global_clock++;
-  if (txn.iso_level > IsolationLevel::READ_UNCOMMITTED) {
+  if (txn.iso_level > IsolationLevel::NO_LOCK) {
     lock_manager_->ReleaseAllLocks(txn.start_ts, {});
     assert(lock_manager_->EmptyLocalSet());
   }
@@ -130,7 +130,7 @@ void TransactionManager::AbortTransaction() {
   // If the undo payload is empty -> prev version does not exist, call tree delete
   // Otherwise, call tree update
   txn.commit_ts = global_clock++;
-  if (txn.iso_level > IsolationLevel::READ_UNCOMMITTED) {
+  if (txn.iso_level > IsolationLevel::NO_LOCK) {
     lock_manager_->ReleaseAllLocks(txn.start_ts, [&](const LockableTuple *tuple, std::span<const u8> payload) {
       auto index                = reinterpret_cast<storage::BTree *>(catalog[tuple->tree_id]);
       [[maybe_unused]] auto ret = (payload.empty())

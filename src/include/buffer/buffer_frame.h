@@ -1,11 +1,11 @@
 #pragma once
 
 #include "common/typedefs.h"
+#include "common/util/small_vector.h"
 #include "sync/hybrid_latch.h"
 
 #include <atomic>
 #include <bitset>
-#include <vector>
 
 namespace leanstore::transaction {
 struct RangeEntry;
@@ -22,13 +22,13 @@ struct BufferFrame {
 
   // Per-page range references (precision variant), protect by  `range_latch`
   alignas(64) sync::HybridLatch range_latch;
-  std::vector<transaction::RangeEntry *> range_refs;
+  common::SmallVector<transaction::RangeEntry *> range_refs;
 
   void Init() {
     last_writer      = 0;
     last_written_gsn = 0;
     range_latch.Init();
-    range_refs.clear();
+    range_refs.Init();
   }
 };
 

@@ -62,7 +62,7 @@ class TestTreeRecovery : public BaseTest {
     }
     ConvenientTxnWrapper([&]() { Ensure(!tree_->IsNotEmpty()); });
     if (prefill_tree) {
-      txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, transaction::IsolationLevel::READ_UNCOMMITTED,
+      txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, transaction::IsolationLevel::NO_LOCK,
                                  transaction::Transaction::Mode::OLTP);
       for (auto &pair : data) {
         std::span key{reinterpret_cast<u8 *>(&pair.first), sizeof(int)};
@@ -285,7 +285,7 @@ TEST_F(TestTreeRecovery, CheckpointAwareRecovery) {
   for (auto idx = 0UL; idx < NO_RECORDS / 2; idx++) {
     more_data.emplace_back(__builtin_bswap32(idx + NO_RECORDS + 1), static_cast<__uint128_t>((idx + NO_RECORDS) * 100));
   }
-  txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, transaction::IsolationLevel::READ_UNCOMMITTED,
+  txn_man_->StartTransaction(transaction::Transaction::Type::USER, 0, transaction::IsolationLevel::NO_LOCK,
                              transaction::Transaction::Mode::OLTP);
   for (auto &pair : more_data) {
     std::span key{reinterpret_cast<u8 *>(&pair.first), sizeof(int)};

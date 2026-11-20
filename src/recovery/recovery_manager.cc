@@ -27,7 +27,7 @@ namespace leanstore::recovery {
 
 // -------------------------------------------------------------------------------------
 /**
- * @brief Recovery was tested with READ UNCOMMITTED, and not yet support higher isolation level
+ * @brief Recovery was tested with NO_LOCK, and not yet support higher isolation level
  */
 RecoveryManager::RecoveryManager(buffer::BufferManager *buffer_pool)
     : buffer_(buffer_pool), backend_(buffer_), max_logged_pid_(0), redo_pid_counter_(1) {
@@ -201,7 +201,7 @@ void RecoveryManager::Redo() {
 
 void RecoveryManager::Undo() {
   /**
-   * @brief Unnecessary because LeanStore doesn't support isolations higher than Read uncommitted
+   * @brief Unnecessary because LeanStore doesn't support isolations higher than NO_LOCK
    *  => No transaction is aborted
    */
   // TODO: CLR-based undo for losers (incl. BLOB txns): also release the extents they
